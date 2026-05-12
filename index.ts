@@ -98,10 +98,31 @@ async function api(path: string, opts?: RequestInit): Promise<any> {
 		},
 		signal: AbortSignal.timeout(10000),
 	});
-	if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+	if (!res.ok) {
+		const body = await res.text();
+		const err: any = new Error(`${res.status}: ${body}`);
+		err.status = res.status;
+		err.body = body;
+		throw err;
+	}
 	const text = await res.text();
 	if (!text) return {};
 	return JSON.parse(text);
+}
+
+function isManagementAuthError(error: any): boolean {
+	const msg = String(error?.message || error || "").toLowerCase();
+	const body = String(error?.body || "").toLowerCase();
+	return msg.includes("invalid management token") ||
+		msg.includes("authentication required") ||
+		msg.includes("auth_001") ||
+		body.includes("invalid management token") ||
+		body.includes("authentication required") ||
+		body.includes("auth_001");
+}
+
+function managementOnlyMessage(action: string): string {
+	return `${action} unavailable: current OmniRoute server allows public model API but blocks management endpoints for API keys. Use /omni sync and normal model routing, or use OmniRoute dashboard session for management tasks.`;
 }
 
 // ────────────────────────── health ──────────────────────────
@@ -702,47 +723,56 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.setStatus("omni", healthy ? "OmniRoute ✓" : "OmniRoute ✗");
 
 		if (healthy) {
-			const [combos, conns] = await Promise.all([listCombos(), listConnections()]);
-			const active = combos.filter((c) => c.isActive !== false).length;
-			const disconnected = getDisconnectedProviders(conns);
+			try {
+				const [combos, conns] = await Promise.all([listCombos(), listConnections()]);
+				const active = combos.filter((c) => c.isActive !== false).length;
+				const disconnected = getDisconnectedProviders(conns);
 
-			ctx.ui.notify(`OmniRoute ready — ${combos.length} combos (${active} active)`, "info");
+				ctx.ui.notify(`OmniRoute ready — ${combos.length} combos (${active} active)`, "info");
 
-			if (disconnected.length > 0) {
-				const names = disconnected
-					.map((c) => {
-						const psd = c.providerSpecificData || {};
-						return `  ❌ ${psd.nodeName || c.provider}: ${c.name} — ${c.lastError || c.errorCode || "disconnected"}`;
-					})
-					.join("\n");
-				ctx.ui.notify(
-					`⚠️ ${disconnected.length} provider(s) need re-authentication:\n${names}\n\nOpen ${DASHBOARD_URL} → Providers to re-connect.`,
-					"warning"
-				);
-			}
+				if (disconnected.length > 0) {
+					const names = disconnected
+						.map((c) => {
+							const psd = c.providerSpecificData || {};
+							return `  ❌ ${psd.nodeName || c.provider}: ${c.name} — ${c.lastError || c.errorCode || "disconnected"}`;
+						})
+						.join("\n");
+					ctx.ui.notify(
+						`⚠️ ${disconnected.length} provider(s) need re-authentication:\n${names}\n\nOpen ${DASHBOARD_URL} → Providers to re-connect.`,
+						"warning"
+					);
+				}
 
-			// Proactive diagnostics on startup
-			const issues = [
-				...checkApiKey(),
+				// Proactive diagnostics on startup
+				const issues = [
+					...checkApiKey(),
 
-				...findConnPrefixedCombos(combos, conns),
-				...findEmptyCombos(combos),
-				...findFragileCombos(combos, conns),
-				...findMissingProjectIds(conns),
-				...findExpiringAccounts(conns),
-			];
-			const fixable = issues.filter((i) => i.fix);
-			const warnings = issues.filter((i) => !i.fix && i.severity !== "info");
+					...findConnPrefixedCombos(combos, conns),
+					...findEmptyCombos(combos),
+					...findFragileCombos(combos, conns),
+					...findMissingProjectIds(conns),
+					...findExpiringAccounts(conns),
+				];
+				const fixable = issues.filter((i) => i.fix);
+				const warnings = issues.filter((i) => !i.fix && i.severity !== "info");
 
-			if (fixable.length > 0) {
-				ctx.ui.notify(
-					`⚠️ ${fixable.length} auto-fixable issue(s) detected. Run /omni doctor to diagnose & fix.`,
-					"warning"
-				);
-			}
-			if (warnings.length > 0) {
-				for (const w of warnings) {
-					ctx.ui.notify(`⚠️ ${w.message}`, "warning");
+				if (fixable.length > 0) {
+					ctx.ui.notify(
+						`⚠️ ${fixable.length} auto-fixable issue(s) detected. Run /omni doctor to diagnose & fix.`,
+						"warning"
+					);
+				}
+				if (warnings.length > 0) {
+					for (const w of warnings) {
+						ctx.ui.notify(`⚠️ ${w.message}`, "warning");
+					}
+				}
+			} catch (e: any) {
+				if (isManagementAuthError(e)) {
+					ctx.ui.setStatus("omni", "OmniRoute ✓ public-only");
+					ctx.ui.notify(managementOnlyMessage("Management features"), "warning");
+				} else {
+					throw e;
 				}
 			}
 		} else {
@@ -780,61 +810,81 @@ export default function (pi: ExtensionAPI) {
 			// ──────────────── /omni (status dashboard) ────────────────
 
 			if (!sub) {
-				const [healthy, combos, conns] = await Promise.all([
-					checkOmniRouteHealth(),
-					listCombos(),
-					listConnections(),
-				]);
+				const healthy = await checkOmniRouteHealth();
+				try {
+					const [combos, conns] = await Promise.all([
+						listCombos(),
+						listConnections(),
+					]);
 
-				const active = combos.filter((c) => c.isActive !== false).length;
-				const activeConns = conns.filter((c) => c.isActive).length;
-				const disconnected = getDisconnectedProviders(conns);
+					const active = combos.filter((c) => c.isActive !== false).length;
+					const activeConns = conns.filter((c) => c.isActive).length;
+					const disconnected = getDisconnectedProviders(conns);
 
-				const lines = [
-					"═══ OmniRoute Status ═══",
-					"",
-					`  OmniRoute: ${healthy ? "✅ healthy" : "❌ DOWN"} (${OMNI_URL})`,
-					"",
-					"─── Combos ───",
-					"",
-					...combos.map((c, i) => "  " + comboLine(c, i)),
-					...(combos.length === 0 ? ["  (none — create in dashboard)"] : []),
-					"",
-					"─── Providers ───",
-					"",
-					`  ${activeConns}/${conns.length} connections active`,
-				];
+					const lines = [
+						"═══ OmniRoute Status ═══",
+						"",
+						`  OmniRoute: ${healthy ? "✅ healthy" : "❌ DOWN"} (${OMNI_URL})`,
+						"",
+						"─── Combos ───",
+						"",
+						...combos.map((c, i) => "  " + comboLine(c, i)),
+						...(combos.length === 0 ? ["  (none — create in dashboard)"] : []),
+						"",
+						"─── Providers ───",
+						"",
+						`  ${activeConns}/${conns.length} connections active`,
+					];
 
-				if (disconnected.length > 0) {
-					lines.push("");
-					lines.push("  ⚠️  Needs re-auth:");
-					for (const c of disconnected) {
-						const psd = c.providerSpecificData || {};
-						lines.push(`    ❌ ${psd.nodeName || c.provider}: ${c.name}`);
+					if (disconnected.length > 0) {
+						lines.push("");
+						lines.push("  ⚠️  Needs re-auth:");
+						for (const c of disconnected) {
+							const psd = c.providerSpecificData || {};
+							lines.push(`    ❌ ${psd.nodeName || c.provider}: ${c.name}`);
+						}
+						lines.push(`    → Open ${DASHBOARD_URL} → Providers`);
 					}
-					lines.push(`    → Open ${DASHBOARD_URL} → Providers`);
+
+					lines.push(
+						"",
+						"─── Commands ───",
+						"",
+						"  /omni combos          Manage combos: edit, create, delete",
+						"  /omni providers       Browse providers, models & add new ones",
+						"  /omni health          Call log analysis + config diagnostics & auto-fix",
+						"  /omni sync            Sync models to Ctrl+P picker",
+						"  /omni setup-key       Create OmniRoute API key & save to models.json",
+						"  /omni dashboard       Dashboard URL",
+					);
+
+					ctx.ui.notify(lines.join("\n"), "info");
+					ctx.ui.setStatus("omni", healthy ? "OmniRoute ✓" : "OmniRoute ✗");
+				} catch (e: any) {
+					if (!isManagementAuthError(e)) throw e;
+					ctx.ui.notify([
+						"═══ OmniRoute Status ═══",
+						"",
+						`  OmniRoute: ${healthy ? "✅ healthy" : "❌ DOWN"} (${OMNI_URL})`,
+						"  Mode: public-only",
+						"",
+						"Management endpoints blocked for API-key auth on this server.",
+						"",
+						"Supported:",
+						"  /omni sync            Sync public model list to Ctrl+P picker",
+						"  /omni setup           Save OmniRoute URL and API key",
+						"  /omni dashboard       Show dashboard URL",
+					].join("\n"), "info");
+					ctx.ui.setStatus("omni", healthy ? "OmniRoute ✓ public-only" : "OmniRoute ✗");
 				}
-
-				lines.push(
-					"",
-					"─── Commands ───",
-					"",
-					"  /omni combos          Manage combos: edit, create, delete",
-					"  /omni providers       Browse providers, models & add new ones",
-					"  /omni health          Call log analysis + config diagnostics & auto-fix",
-					"  /omni sync            Sync models to Ctrl+P picker",
-					"  /omni setup-key       Create OmniRoute API key & save to models.json",
-					"  /omni dashboard       Dashboard URL",
-				);
-
-				ctx.ui.notify(lines.join("\n"), "info");
-				ctx.ui.setStatus("omni", healthy ? "OmniRoute ✓" : "OmniRoute ✗");
 				return;
 			}
 
 			// ──────────────── /omni combos ────────────────
 
 			if (sub === "combos") {
+				ctx.ui.notify(managementOnlyMessage("/omni combos"), "warning");
+				return;
 				let browsing = true;
 				while (browsing) {
 					const combos = await listCombos();
@@ -998,6 +1048,8 @@ export default function (pi: ExtensionAPI) {
 			// ──────────────── /omni providers ────────────────
 
 			if (sub === "providers") {
+				ctx.ui.notify(managementOnlyMessage("/omni providers"), "warning");
+				return;
 				const [conns, nodes] = await Promise.all([listConnections(), listProviderNodes()]);
 				const groups = groupProviders(conns, nodes);
 
@@ -1153,6 +1205,8 @@ export default function (pi: ExtensionAPI) {
 			// ──────────────── /omni health (merged log-review + doctor) ────────────────
 
 			if (sub === "health" || sub === "log-review" || sub === "logreview" || sub === "doctor" || sub === "doc") {
+				ctx.ui.notify(managementOnlyMessage("/omni health"), "warning");
+				return;
 				ctx.ui.notify("Running health check…", "info");
 
 				try {
@@ -1523,6 +1577,8 @@ export default function (pi: ExtensionAPI) {
 			// ──────────────── /omni limits ────────────────
 
 			if (sub === "limits" || sub === "quota" || sub === "usage") {
+				ctx.ui.notify(managementOnlyMessage("/omni limits"), "warning");
+				return;
 				try {
 					ctx.ui.setStatus("omni", "Fetching quotas…");
 					const data = await api("/api/usage/quota");
