@@ -1,0 +1,36 @@
+{
+  "name": "omniroute-pi-ext-integration",
+  "version": "1.0.0",
+  "description": "Pi Coding Agent extension for OmniRoute — manage combos, browse providers, track limits, and see which model actually served each response in the status bar",
+  "keywords": [
+    "pi-package",
+    "pi-coding-agent",
+    "omniroute",
+    "llm",
+    "ai-gateway",
+    "extension",
+    "coding-agent"
+  ],
+  "main": "index.ts",
+  "files": [
+    "index.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "author": "md-riaz",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/md-riaz/omniroute-pi-ext-integration.git"
+  },
+  "homepage": "https://github.com/md-riaz/omniroute-pi-ext-integration#readme",
+  "bugs": {
+    "url": "https://github.com/md-riaz/omniroute-pi-ext-integration/issues"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.60.0"
+  }
+}
