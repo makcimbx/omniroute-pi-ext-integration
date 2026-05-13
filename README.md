@@ -9,9 +9,9 @@ Connect to your local or remote OmniRoute server, browse models, manage combos, 
 - 🔮 **Wizard-Based Setup**: Just run `/omni setup` inside Pi. No manual JSON editing needed.
 - ⚡ **Pure HTTP Client**: Works securely and seamlessly whether your OmniRoute server is running locally on `localhost:20128` or hosted on a remote VPS.
 - 🔄 **Combo & Model Sync**: Instantly push all OmniRoute combos and available models into Pi’s `Ctrl+P` model picker with full metadata (context windows, max tokens, reasoning support, and vision capabilities).
+- 📊 **Real-time Routing Feedback**: Status bar dynamically shows which model *actually* served each response (via call logs).
 - 🧬 **Smart Sorting**: Syncing organizes your model list by provider/group (`owned_by`) for a cleaner `Ctrl+P` experience.
-- 📊 **Real-time Routing Feedback**: Status bar dynamically shows which model *actually* served each response.
-- 🛠️ **Diagnostics & Health**: Spot expired tokens, connection failures, or disconnected providers right when Pi starts.
+- 🛠️ **Diagnostics & Health**: Spot expired tokens, connection failures, or disconnected providers right when Pi starts (management endpoints must be accessible).
 - 📉 **Quota Management**: Live usage tracking mapped directly to OmniRoute's global quota endpoints.
 
 ## Installation
@@ -35,15 +35,9 @@ pi install git:github.com/md-riaz/omniroute-pi-ext-integration
 
 ## Commands Reference
 
-| Command | Description |
-|---------|-------------|
-| `/omni setup` | Launch interactive wizard to link Pi with your OmniRoute gateway |
 | `/omni` | Dashboard showing server health, active connections, and combos |
-| `/omni combos` | View and edit your routing combos directly from Pi |
-| `/omni providers` | Browse active providers, connection statuses, and node lists |
-| `/omni health` | Run an automated diagnostic check for token expiry and broken models |
-| `/omni limits` | View server-side API quotas and rate limit usage |
 | `/omni sync` | Sync your Pi model picker with all healthy OmniRoute instances |
+| `/omni setup` | Launch interactive wizard to link Pi with your OmniRoute gateway |
 | `/omni dashboard` | Get the direct link to your OmniRoute web interface |
 
 ## Requirements
