@@ -598,12 +598,17 @@ async function getAllModelsFromOmniRoute(): Promise<{ id: string; name: string; 
 		for (const m of models) {
 			const id = typeof m === "string" ? m : m.id;
 			if (id) {
-				results.push({
+				const res: any = {
 					id,
 					name: humanName(id),
 					owned_by: m.owned_by,
 					api: "openai-completions",
-				});
+				};
+
+				const cw = m.context_length || m.max_input_tokens;
+				if (cw) res.contextWindow = cw;
+
+				results.push(res);
 			}
 		}
 	} catch {}
