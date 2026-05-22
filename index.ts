@@ -126,7 +126,11 @@ function managementOnlyMessage(action: string): string {
 
 async function checkOmniRouteHealth(): Promise<boolean> {
 	try {
-		const res = await fetch(`${OMNI_URL}/v1/models`, { signal: AbortSignal.timeout(3000) });
+		const apiKey = getApiKey();
+		const res = await fetch(`${OMNI_URL}/v1/models`, {
+			headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+			signal: AbortSignal.timeout(3000),
+		});
 		return res.ok;
 	} catch {
 		return false;
@@ -238,7 +242,7 @@ function groupProviders(connections: Connection[], nodes: ProviderNode[]): Provi
 	for (const c of connections) {
 		const psd = c.providerSpecificData || {};
 		let displayName = psd.nodeName || c.provider;
-		let prefix = psd.prefix || "";
+		const prefix = psd.prefix || "";
 
 		if (!psd.nodeName) {
 			displayName = c.provider.charAt(0).toUpperCase() + c.provider.slice(1);
@@ -1531,24 +1535,33 @@ export default function (pi: ExtensionAPI) {
 				if (!urlInput) return;
 				const baseUrl = urlInput.trim().replace(/\/$/, "");
 
+				// Ask for API Key before testing connectivity: some remote OmniRoute
+				// instances require Authorization even for /v1/models.
+				const apiKey = await ctx.ui.input(
+					"OmniRoute API Key",
+					"Enter your API key or press enter to leave blank"
+				);
+				if (apiKey === undefined) return;
+				const trimmedApiKey = apiKey.trim();
+
 				// Test connectivity
 				try {
-					const res = await fetch(`${baseUrl}/v1/models`, { signal: AbortSignal.timeout(3000) });
+					const res = await fetch(`${baseUrl}/v1/models`, {
+						headers: trimmedApiKey ? { Authorization: `Bearer ${trimmedApiKey}` } : {},
+						signal: AbortSignal.timeout(3000),
+					});
 					if (!res.ok) {
-						ctx.ui.notify(`OmniRoute unreachable at ${baseUrl} (${res.status})`, "error");
+						const body = await res.text();
+						ctx.ui.notify(
+							`OmniRoute unreachable at ${baseUrl} (${res.status})${body ? `: ${body}` : ""}`,
+							"error"
+						);
 						return;
 					}
 				} catch (e: any) {
 					ctx.ui.notify(`OmniRoute unreachable at ${baseUrl}: ${e.message}`, "error");
 					return;
 				}
-
-				// Ask for API Key
-				const apiKey = await ctx.ui.input(
-					"OmniRoute API Key",
-					"Enter your API key or press enter to leave blank"
-				);
-				if (apiKey === undefined) return;
 
 				// Save configuration
 				try {
@@ -1561,7 +1574,7 @@ export default function (pi: ExtensionAPI) {
 					config.providers.omni = {
 						baseUrl,
 						api: "openai-completions",
-						apiKey: apiKey.trim(),
+						apiKey: trimmedApiKey,
 						models: [],
 					};
 
