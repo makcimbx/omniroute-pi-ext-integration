@@ -1551,7 +1551,7 @@ export default function (pi: ExtensionAPI) {
 						signal: AbortSignal.timeout(3000),
 					});
 					if (!res.ok) {
-						const body = await res.text();
+						const body = (await res.text()).slice(0, 200);
 						ctx.ui.notify(
 							`OmniRoute unreachable at ${baseUrl} (${res.status})${body ? `: ${body}` : ""}`,
 							"error"
